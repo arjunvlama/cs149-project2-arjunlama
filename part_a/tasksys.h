@@ -72,7 +72,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
 
     private:
         const std::vector<std::thread> ThreadPool;
-        void runThread();
+        void runWorkerThread();
+        const int workerCount;
 };
 
 #endif

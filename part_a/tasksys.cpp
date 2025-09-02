@@ -149,8 +149,10 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     //
 
     for (int i = 0; i < num_threads; i++) {
-        
+        ThreadPool.push_back(std::thread(runWorkerThread));
     }
+
+    workerCount = num_threads;
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -193,5 +195,9 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     // TODO: CS149 students will modify the implementation of this method in Part B.
     //
 
+    return;
+}
+
+void TaskSystemParallelThreadPoolSleeping::runWorkerThread() {
     return;
 }
