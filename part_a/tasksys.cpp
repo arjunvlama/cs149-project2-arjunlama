@@ -229,7 +229,7 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
 
 void TaskSystemParallelThreadPoolSleeping::runWorkerThread(int workerNumber) {
 
-    ThreadSafeQueue tsq;
+    ThreadSafeQueue tsq = WorkerTaskQueues[workerNumber];
     std::mutex mtx = tsq.lock;
     std::deque tasks = tsq.tasks;
     std::condition_variable cv = tsq.cv;
