@@ -149,9 +149,8 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     //
 
     for (int i = 0; i < num_threads; i++) {
-        ThreadPool.push_back(std::thread(runWorkerThread, i));
-        ThreadSafeQueue tq;
-        WorkerTaskQueues.push_back(tq);
+        threadPool.emplace_back(&TaskSystemParallelThreadPoolSleeping::runWorkerThread, this, i);
+        workerTaskQueues.emplace_back();
     }
 
     workerCount = num_threads;
@@ -165,46 +164,45 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // (requiring changes to tasksys.h).
     //
 
-    foreach (size_t i=0;i<ThreadPool.size(); ++i) {
-        kill = true;
-        WorkerTaskQueues[i].cv.notify_one();
-        ThreadPool[i].join();
+    kill = true;
+    for (size_t i=0;i<threadPool.size(); ++i) {
+        workerTaskQueues[i].cv.notify_one();
+        threadPool[i].join();
     }
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
     // Run will have num_total_tasks to run, a worker will signal to this thread when to wake up because the tasks are done
 
-    TasksLeft = num_total_tasks;
-    TotalTasks = num_total_tasks;
+    task = runnable;
+    tasksLeft = num_total_tasks;
+    totalTasks = num_total_tasks;
 
     std::mutex mtx;
     std::unique_lock<std::mutex> lock(mtx);
 
-    int tasksPerWorker = num_total_tasks / WorkerCount;
-    int extraTaskWorkers = num_total_tasks % WorkerCount;
+    int tasksPerWorker = num_total_tasks / workerCount;
+    int extraTaskWorkers = num_total_tasks % workerCount;
 
     int taskNumber = num_total_tasks - 1;
 
     // Assign the tasks evenly to workers
-    for (int i=0; i<WorkerCount; ++i) {
+    for (int i=0; i<workerCount; ++i) {
         int numTasks = tasksPerWorker;
         if (extraTaskWorkers > 0) {
-            numTasks + 1;
+            ++numTasks;
             --extraTaskWorkers;
         }
-        std::mutex workerMtx = WorkerTaskQueues[i].mtx;
-        workerMtx.lock();
+        workerTaskQueues[i].mtx.lock();
         for (int j=0; j<numTasks; ++j) {
-            WorkerTaskQueues[i].tasks.push_back(taskNumber);
+            workerTaskQueues[i].tasks.push_back(taskNumber);
             --taskNumber;
         }
-        workerMtx.unlock();
-        std::condition_variable cv = WorkerTaskQueues[i].cv;
-        cv.notify_one();
+        workerTaskQueues[i].mtx.unlock();
+        workerTaskQueues[i].cv.notify_one();
     }
 
-    TasksFinished.wait(lock, [] { return (TasksLeft <= 0); });
+    tasksFinished.wait(lock, [this] { return (tasksLeft <= 0); });
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -229,35 +227,33 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
 
 void TaskSystemParallelThreadPoolSleeping::runWorkerThread(int workerNumber) {
 
-    ThreadSafeQueue tsq = WorkerTaskQueues[workerNumber];
-    std::mutex mtx = tsq.lock;
-    std::deque tasks = tsq.tasks;
-    std::condition_variable cv = tsq.cv;
     int myTask = -1;
-    std::unique_lock<std::mutex> lock(mtx);
+    std::unique_lock<std::mutex> lock(workerTaskQueues[workerNumber].mtx);
 
     while (!kill) {
-        cv.wait(lock, [] { return !tasks.empty()})
-        myTask = tasks.pop_front();
+        workerTaskQueues[workerNumber].cv.wait(lock, [this] { return !(workerTaskQueues[workerNumber].tasks.empty()); });
+        myTask = workerTaskQueues[workerNumber].tasks.front();
+        workerTaskQueues[workerNumber].tasks.pop_front();
         lock.unlock();
         
         while (myTask != -1) {
-            task->runTask(myTask, TotalTasks); // run the task
+            task->runTask(myTask, totalTasks); // run the task
 
             // Tasks left idea might be overcontrived, 
             // there will be a lot of contention here
 
-            if (TasksLeft.fetch_sub(1) <= 0) {
-                TasksFinished.notify_one();
+            if (tasksLeft.fetch_sub(1) <= 0) {
+                tasksFinished.notify_one();
                 break;
             }
 
             myTask = -1;
-            mtx.lock();
-            if (!tasks.empty()) {
-                myTask = tasks.pop_front();
+            lock.lock();
+            if (!workerTaskQueues[workerNumber].tasks.empty()) {
+                myTask = workerTaskQueues[workerNumber].tasks.front();
+                workerTaskQueues[workerNumber].tasks.pop_front();
             }
-            mtx.unlock();
+            lock.unlock();
         }
     }
 

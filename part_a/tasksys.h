@@ -70,7 +70,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::deque<int> tasks;
         std::mutex mtx;
         std::condition_variable cv;
-    }
+    };
 
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
@@ -82,15 +82,15 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         void sync();
 
     private:
-        const std::vector<std::thread> ThreadPool;
-        const std::vector<ThreadSafeQueue> WorkerTaskQueues;
+        std::vector<std::thread> threadPool;
+        std::vector<ThreadSafeQueue> workerTaskQueues;
         void runWorkerThread(int workerNumber);
-        const int WorkerCount = 0;
-        std::atomic<int> TasksLeft = 0;
-        IRunnable* Task;
-        int TotalTasks = 0;
-        const std::condition_variable TasksFinished;
-        std::atomic<bool> kill = false;
+        int workerCount = 0;
+        std::atomic<int> tasksLeft{0};
+        IRunnable* task;
+        int totalTasks = 0;
+        std::condition_variable tasksFinished;
+        std::atomic<bool> kill{false};
 };
 
 #endif
