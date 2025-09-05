@@ -149,8 +149,8 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     //
 
     for (int i = 0; i < num_threads; i++) {
-        threadPool.emplace_back(&TaskSystemParallelThreadPoolSleeping::runWorkerThread, this, i);
-        workerTaskQueues.emplace_back();
+        workerTaskQueues.emplace_back(std::unique_ptr<ThreadSafeQueue>(new ThreadSafeQueue()));
+        threadPool.emplace_back(&TaskSystemParallelThreadPoolSleeping::runWorkerThread, this, workerTaskQueues.back().get());
     }
 
     workerCount = num_threads;
@@ -166,7 +166,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 
     kill = true;
     for (size_t i=0;i<threadPool.size(); ++i) {
-        workerTaskQueues[i].cv.notify_one();
+        workerTaskQueues[i]->cv.notify_one();
         threadPool[i].join();
     }
 }
@@ -193,13 +193,14 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
             ++numTasks;
             --extraTaskWorkers;
         }
-        workerTaskQueues[i].mtx.lock();
+        ThreadSafeQueue* wtq = workerTaskQueues[i].get();
+        wtq->mtx.lock();
         for (int j=0; j<numTasks; ++j) {
-            workerTaskQueues[i].tasks.push_back(taskNumber);
+            wtq->tasks.push_back(taskNumber);
             --taskNumber;
         }
-        workerTaskQueues[i].mtx.unlock();
-        workerTaskQueues[i].cv.notify_one();
+        wtq->mtx.unlock();
+        wtq->cv.notify_one();
     }
 
     tasksFinished.wait(lock, [this] { return (tasksLeft <= 0); });
@@ -225,15 +226,15 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     return;
 }
 
-void TaskSystemParallelThreadPoolSleeping::runWorkerThread(int workerNumber) {
+void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq) {
 
     int myTask = -1;
-    std::unique_lock<std::mutex> lock(workerTaskQueues[workerNumber].mtx);
+    std::unique_lock<std::mutex> lock(tsq->mtx);
 
     while (!kill) {
-        workerTaskQueues[workerNumber].cv.wait(lock, [this] { return !(workerTaskQueues[workerNumber].tasks.empty()); });
-        myTask = workerTaskQueues[workerNumber].tasks.front();
-        workerTaskQueues[workerNumber].tasks.pop_front();
+        tsq->cv.wait(lock, [tsq] { return !tsq->tasks.empty(); });
+        myTask = tsq->tasks.front();
+        tsq->tasks.pop_front();
         lock.unlock();
         
         while (myTask != -1) {
@@ -249,9 +250,9 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(int workerNumber) {
 
             myTask = -1;
             lock.lock();
-            if (!workerTaskQueues[workerNumber].tasks.empty()) {
-                myTask = workerTaskQueues[workerNumber].tasks.front();
-                workerTaskQueues[workerNumber].tasks.pop_front();
+            if (!tsq->tasks.empty()) {
+                myTask = tsq->tasks.front();
+                tsq->tasks.pop_front();
             }
             lock.unlock();
         }

@@ -7,6 +7,7 @@
 #include <deque>
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -83,8 +84,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
 
     private:
         std::vector<std::thread> threadPool;
-        std::vector<ThreadSafeQueue> workerTaskQueues;
-        void runWorkerThread(int workerNumber);
+        std::vector<std::unique_ptr<ThreadSafeQueue>> workerTaskQueues;
+        void runWorkerThread(ThreadSafeQueue* tsq);
         int workerCount = 0;
         std::atomic<int> tasksLeft{0};
         IRunnable* task;
