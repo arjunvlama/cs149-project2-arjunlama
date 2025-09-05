@@ -3,6 +3,10 @@
 
 #include "itasksys.h"
 #include <thread>
+#include <mutex>
+#include <deque>
+#include <atomic>
+#include <condition_variable>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -61,6 +65,13 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  * itasksys.h for documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+
+    struct ThreadSafeQueue {
+        std::deque<int> tasks;
+        std::mutex mtx;
+        std::condition_variable cv;
+    }
+
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
@@ -72,8 +83,14 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
 
     private:
         const std::vector<std::thread> ThreadPool;
-        void runWorkerThread();
-        const int workerCount;
+        const std::vector<ThreadSafeQueue> WorkerTaskQueues;
+        void runWorkerThread(int workerNumber);
+        const int WorkerCount = 0;
+        std::atomic<int> TasksLeft = 0;
+        IRunnable* Task;
+        int TotalTasks = 0;
+        const std::condition_variable TasksFinished;
+        std::atomic<bool> kill = false;
 };
 
 #endif

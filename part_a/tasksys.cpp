@@ -149,7 +149,9 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     //
 
     for (int i = 0; i < num_threads; i++) {
-        ThreadPool.push_back(std::thread(runWorkerThread));
+        ThreadPool.push_back(std::thread(runWorkerThread, i));
+        ThreadSafeQueue tq;
+        WorkerTaskQueues.push_back(tq);
     }
 
     workerCount = num_threads;
@@ -162,20 +164,47 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    foreach (size_t i=0;i<ThreadPool.size(); ++i) {
+        kill = true;
+        WorkerTaskQueues[i].cv.notify_one();
+        ThreadPool[i].join();
+    }
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
+    // Run will have num_total_tasks to run, a worker will signal to this thread when to wake up because the tasks are done
 
+    TasksLeft = num_total_tasks;
+    TotalTasks = num_total_tasks;
 
-    //
-    // TODO: CS149 students will modify the implementation of this
-    // method in Parts A and B.  The implementation provided below runs all
-    // tasks sequentially on the calling thread.
-    //
+    std::mutex mtx;
+    std::unique_lock<std::mutex> lock(mtx);
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    int tasksPerWorker = num_total_tasks / WorkerCount;
+    int extraTaskWorkers = num_total_tasks % WorkerCount;
+
+    int taskNumber = num_total_tasks - 1;
+
+    // Assign the tasks evenly to workers
+    for (int i=0; i<WorkerCount; ++i) {
+        int numTasks = tasksPerWorker;
+        if (extraTaskWorkers > 0) {
+            numTasks + 1;
+            --extraTaskWorkers;
+        }
+        std::mutex workerMtx = WorkerTaskQueues[i].mtx;
+        workerMtx.lock();
+        for (int j=0; j<numTasks; ++j) {
+            WorkerTaskQueues[i].tasks.push_back(taskNumber);
+            --taskNumber;
+        }
+        workerMtx.unlock();
+        std::condition_variable cv = WorkerTaskQueues[i].cv;
+        cv.notify_one();
     }
+
+    TasksFinished.wait(lock, [] { return (TasksLeft <= 0); });
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -198,6 +227,39 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     return;
 }
 
-void TaskSystemParallelThreadPoolSleeping::runWorkerThread() {
+void TaskSystemParallelThreadPoolSleeping::runWorkerThread(int workerNumber) {
+
+    ThreadSafeQueue tsq;
+    std::mutex mtx = tsq.lock;
+    std::deque tasks = tsq.tasks;
+    std::condition_variable cv = tsq.cv;
+    int myTask = -1;
+    std::unique_lock<std::mutex> lock(mtx);
+
+    while (!kill) {
+        cv.wait(lock, [] { return !tasks.empty()})
+        myTask = tasks.pop_front();
+        lock.unlock();
+        
+        while (myTask != -1) {
+            task->runTask(myTask, TotalTasks); // run the task
+
+            // Tasks left idea might be overcontrived, 
+            // there will be a lot of contention here
+
+            if (TasksLeft.fetch_sub(1) <= 0) {
+                TasksFinished.notify_one();
+                break;
+            }
+
+            myTask = -1;
+            mtx.lock();
+            if (!tasks.empty()) {
+                myTask = tasks.pop_front();
+            }
+            mtx.unlock();
+        }
+    }
+
     return;
 }
