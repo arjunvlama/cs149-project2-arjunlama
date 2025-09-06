@@ -8,7 +8,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <memory>
-
+#include <iostream>
 /*
  * TaskSystemSerial: This class is the student's implementation of a
  * serial task execution engine.  See definition of ITaskSystem in
@@ -70,7 +70,6 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     struct ThreadSafeQueue {
         std::deque<int> tasks;
         std::mutex mtx;
-        std::condition_variable cv;
     };
 
     public:
@@ -92,6 +91,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         int totalTasks = 0;
         std::condition_variable tasksFinished;
         std::atomic<bool> kill{false};
+        std::condition_variable workerCv;
 };
 
 #endif
