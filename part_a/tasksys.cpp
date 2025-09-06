@@ -252,10 +252,7 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
         //std::cout << "Running worker thread top of loop " << id << '\n';
         lock.lock();
         workerCv.wait(lock, [tsq, this] { return !tsq->tasks.empty() || kill; });
-        if (kill) {
-            lock.unlock(); // Technically this is not necessary
-            return;
-        }
+        if (kill) return;
         //std::cout << "Running worker thread taking from the queue " << id << '\n';
         myTask = tsq->tasks.front();
         //std::cout << "Running worker thread popping " << myTask << " from the queue " << id << '\n';
