@@ -148,9 +148,11 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // (requiring changes to tasksys.h).
     //
 
+    //std::cout << "Starting task system! " << '\n';
+
     for (int i = 0; i < num_threads; i++) {
         workerTaskQueues.emplace_back(std::unique_ptr<ThreadSafeQueue>(new ThreadSafeQueue()));
-        threadPool.emplace_back(&TaskSystemParallelThreadPoolSleeping::runWorkerThread, this, workerTaskQueues.back().get());
+        threadPool.emplace_back(&TaskSystemParallelThreadPoolSleeping::runWorkerThread, this, workerTaskQueues.back().get(), i);
     }
 
     workerCount = num_threads;
@@ -164,9 +166,12 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // (requiring changes to tasksys.h).
     //
 
+    //std::cout << "Ending task system! " << '\n';
+
     kill = true;
+    workerCv.notify_all();
+
     for (size_t i=0;i<threadPool.size(); ++i) {
-        workerTaskQueues[i]->cv.notify_one();
         threadPool[i].join();
     }
 }
@@ -174,6 +179,9 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
     // Run will have num_total_tasks to run, a worker will signal to this thread when to wake up because the tasks are done
 
+    //std::cout << "Running task set on task system for number of tasks ! " << num_total_tasks << '\n';
+
+    //try {
     task = runnable;
     tasksLeft = num_total_tasks;
     totalTasks = num_total_tasks;
@@ -196,14 +204,21 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
         ThreadSafeQueue* wtq = workerTaskQueues[i].get();
         wtq->mtx.lock();
         for (int j=0; j<numTasks; ++j) {
+            //std::cout << "Putting task number " << taskNumber << " on the queue!" << '\n';
             wtq->tasks.push_back(taskNumber);
             --taskNumber;
         }
         wtq->mtx.unlock();
-        wtq->cv.notify_one();
     }
 
+    workerCv.notify_all();
     tasksFinished.wait(lock, [this] { return (tasksLeft <= 0); });
+    //}
+    //catch (const std::system_error& e) {
+    //std::cerr << "Thread error task system run: " << e.what() << '\n';
+    //}
+
+    //std::cout << "Exiting caller thread" << '\n';
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -226,37 +241,49 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     return;
 }
 
-void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq) {
+void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq, int id) {
 
+    //std::cout << "Running worker thread! " << id << '\n';
+    //try {
     int myTask = -1;
-    std::unique_lock<std::mutex> lock(tsq->mtx);
+    std::unique_lock<std::mutex> lock(tsq->mtx, std::defer_lock);
 
-    while (!kill) {
-        tsq->cv.wait(lock, [tsq] { return !tsq->tasks.empty(); });
+    while (1) {
+        //std::cout << "Running worker thread top of loop " << id << '\n';
+        lock.lock();
+        workerCv.wait(lock, [tsq, this] { return !tsq->tasks.empty() || kill; });
+        if (kill) {
+            lock.unlock(); // Technically this is not necessary
+            return;
+        }
+        //std::cout << "Running worker thread taking from the queue " << id << '\n';
         myTask = tsq->tasks.front();
+        //std::cout << "Running worker thread popping " << myTask << " from the queue " << id << '\n';
         tsq->tasks.pop_front();
         lock.unlock();
         
-        while (myTask != -1) {
+        //std::cout << "Running worker thread task number to run " << id << " " << myTask << '\n';
+        if (myTask != -1) {
+            //std::cout << "Running worker thread running task " << id << " " << myTask << '\n';
             task->runTask(myTask, totalTasks); // run the task
 
             // Tasks left idea might be overcontrived, 
             // there will be a lot of contention here
-
-            if (tasksLeft.fetch_sub(1) <= 0) {
+            if (tasksLeft.fetch_sub(1) == 1) {
+                //std::cout << "Finished tasks for worker " << id << '\n';
                 tasksFinished.notify_one();
-                break;
             }
-
             myTask = -1;
-            lock.lock();
-            if (!tsq->tasks.empty()) {
-                myTask = tsq->tasks.front();
-                tsq->tasks.pop_front();
-            }
-            lock.unlock();
         }
     }
-
+    //}
+    /*catch (const std::system_error& e) {
+    std::cerr << "Thread error worker: " << id << e.what() << '\n';
+    std::cerr << "Thread error: " << id << " " << e.what() << "\n";
+    std::cerr << "Error code: " << id << " " << e.code().value() << "\n";
+    std::cerr << "Error category: " << id << " " << e.code().category().name() << "\n";
+    std::cerr << "Error message: " << id << " " << e.code().message() << "\n";
+    }
+    std::cout << "Worker thread exiting! " << id << '\n';*/
     return;
 }

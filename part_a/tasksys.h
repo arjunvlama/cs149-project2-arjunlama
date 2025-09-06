@@ -84,7 +84,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
         std::vector<std::thread> threadPool;
         std::vector<std::unique_ptr<ThreadSafeQueue>> workerTaskQueues;
-        void runWorkerThread(ThreadSafeQueue* tsq);
+        void runWorkerThread(ThreadSafeQueue* tsq, int id);
         int workerCount = 0;
         std::atomic<int> tasksLeft{0};
         IRunnable* task;
