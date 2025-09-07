@@ -169,9 +169,8 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //std::cout << "Ending task system! " << '\n';
 
     kill = true;
-    workerCv.notify_all();
-
     for (size_t i=0;i<threadPool.size(); ++i) {
+        workerTaskQueues[i]->cv.notify_one();
         threadPool[i].join();
     }
 }
@@ -209,9 +208,9 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
             --taskNumber;
         }
         wtq->mtx.unlock();
+        wtq->cv.notify_one();
     }
 
-    workerCv.notify_all();
     tasksFinished.wait(lock, [this] { return (tasksLeft <= 0); });
     //}
     //catch (const std::system_error& e) {
@@ -251,7 +250,7 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
     while (1) {
         //std::cout << "Running worker thread top of loop " << id << '\n';
         lock.lock();
-        workerCv.wait(lock, [tsq, this] { return !tsq->tasks.empty() || kill; });
+        tsq->cv.wait(lock, [tsq, this] { return !tsq->tasks.empty() || kill; });
         if (kill) return;
         //std::cout << "Running worker thread taking from the queue " << id << '\n';
         myTask = tsq->tasks.front();
