@@ -189,8 +189,14 @@ void TaskSystemParallelThreadPoolSleeping::assignTasksStatically(IRunnable* runn
     //std::cout << "Number of sub tasks for parent " << parentTaskNum << " is " << numTotalTasks << '\n';  
     int tasksPerWorker = numTotalTasks / workerCount;
     int extraTaskWorkers = numTotalTasks % workerCount;
-
     int taskNumber = numTotalTasks - 1;
+
+    if (numTotalTasks < workerCount) {
+        tasks[parentTaskNum]->pendingWorkers = numTotalTasks;
+    }
+    else {
+        tasks[parentTaskNum]->pendingWorkers = workerCount;
+    }
 
     // Assign the tasks evenly to workers
     for (int i=0; i<workerCount; ++i) {
@@ -201,7 +207,6 @@ void TaskSystemParallelThreadPoolSleeping::assignTasksStatically(IRunnable* runn
         }
 
         if (numTasks == 0) continue;
-        tasks[parentTaskNum]->pendingWorkers += 1;
 
         tasks[parentTaskNum]->lastWorkerTasks[workerTaskStart] = taskNumber - (numTasks - 1);
         //std::cout << "Last worker task for task " << parentTaskNum << " set to " << taskNumber - (numTasks - 1) << " for worker " << workerTaskStart << '\n';
@@ -227,6 +232,8 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     std::unique_lock<std::mutex> lock(mtx);
 
     tasksFinished.wait(lock, [this] { return (tasksLeft <= 0); });
+
+    //std::cout << "Made it past sync wait!" << '\n';
 
     tasksLeft = 0;
     tasks.clear();
@@ -263,6 +270,7 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
 
             if (myTask.second == myTaskInfo->lastWorkerTasks[id]) {
                 if (myTaskInfo->pendingWorkers.fetch_sub(1) == 1) {
+                    //std::cout << "Finished task " << myTask.first << " item " << myTask.second << " " << id << '\n';
                     for (size_t i=0;i<myTaskInfo->dependents.size(); i++) {
                         TaskInfo* dependTaskInfo = tasks[myTaskInfo->dependents[i]].get();
                         if (dependTaskInfo->refs.fetch_sub(1) == 1) {
@@ -275,6 +283,7 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
                     // less contention than before here, but if there are a lot of small batches of tasks its still bad
                     tasks[myTask.first].reset();
                     if (tasksLeft.fetch_sub(1) == 1) {
+                        //std::cout << "Notifying sync of task completion for: " << myTask.first << " " << id << '\n';
                         tasksFinished.notify_one();
                     }
                 }
