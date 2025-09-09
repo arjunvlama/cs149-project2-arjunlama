@@ -2,6 +2,15 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <atomic>
+#include <thread>
+#include <mutex>
+#include <deque>
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <iostream>
+#include <vector>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -68,6 +77,40 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+        struct ThreadSafeQueue {
+            std::deque<std::pair<int,int>> tasks;
+            std::mutex mtx;
+            std::condition_variable cv;
+        };
+
+        struct TaskInfo {
+            //bool running = false;
+            std::atomic<int> refs{0};
+            IRunnable* runnable;
+            std::vector<TaskID> dependents;
+            std::vector<std::pair<int, std::atomic<bool>>> workersFinished;
+
+            TaskInfo(IRunnable* run, int workerCount) {
+                runnable = run;
+                workersFinished.reserve(workerCount);
+
+                for (int i=0; i<workerCount;++i) {
+                    workersFinished.emplace_back(-1, false);
+                }
+            }
+        }
+
+        std::vector<std::thread> threadPool;
+        std::vector<std::unique_ptr<ThreadSafeQueue>> workerTaskQueues;
+        void runWorkerThread(ThreadSafeQueue* tsq, int id);
+        int workerCount = 0;
+
+        std::condition_variable tasksFinished;
+        std::atomic<bool> kill{false};
+
+        std::vector<TaskInfo> waitingTasks;
+        int workerTaskStart = 0;
 };
 
 #endif

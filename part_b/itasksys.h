@@ -1,6 +1,5 @@
 #ifndef _ITASKSYS_H
 #define _ITASKSYS_H
-#include <vector>
 
 typedef int TaskID;
 

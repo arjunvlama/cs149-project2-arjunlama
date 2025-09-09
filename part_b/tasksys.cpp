@@ -133,6 +133,13 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    for (int i = 0; i < num_threads; i++) {
+        workerTaskQueues.emplace_back(std::unique_ptr<ThreadSafeQueue>(new ThreadSafeQueue()));
+        threadPool.emplace_back(&TaskSystemParallelThreadPoolSleeping::runWorkerThread, this, workerTaskQueues.back().get(), i);
+    }
+
+    workerCount = num_threads;
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -160,15 +167,50 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                     const std::vector<TaskID>& deps) {
+    // check if the task can be run immediately
 
+    bool scheduleTask = true;
 
-    //
-    // TODO: CS149 students will implement this method in Part B.
-    //
-
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    for (size_t i=0; i<deps.size(); i++) {
+        for (int j=0; j<workerCount; j++) {
+            if (waitingTasks[j]->workersFinished.second == false) {
+                scheduleTask = false;
+                goto exit;
+            }
+        }
     }
+
+    // put the task info 
+    waitingTasks.emplace_back(runnable, workerCount);
+
+    exit:
+        if (scheduleTask) {
+
+            int tasksPerWorker = num_total_tasks / workerCount;
+            int extraTaskWorkers = num_total_tasks % workerCount;
+
+            int taskNumber = num_total_tasks - 1;
+
+            // Assign the tasks evenly to workers
+            for (int i=0; i<workerCount; ++i) {
+                int numTasks = tasksPerWorker;
+                if (extraTaskWorkers > 0) {
+                    ++numTasks;
+                    --extraTaskWorkers;
+                }
+                ThreadSafeQueue* wtq = workerTaskQueues[i].get();
+                wtq->mtx.lock();
+                for (int j=0; j<numTasks; ++j) {
+                    //std::cout << "Putting task number " << taskNumber << " on the queue!" << '\n';
+                    wtq->tasks.push_back(taskNumber);
+                    --taskNumber;
+                }
+                wtq->mtx.unlock();
+                wtq->cv.notify_one();
+            }
+
+
+        }
 
     return 0;
 }
