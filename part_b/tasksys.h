@@ -78,6 +78,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
                                 const std::vector<TaskID>& deps);
         void sync();
 
+    private:
         struct ThreadSafeQueue {
             std::deque<std::pair<int,int>> tasks;
             std::mutex mtx;
@@ -87,23 +88,22 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         struct TaskInfo {
             //bool running = false;
             int totalTasks;
-            std::atomic<int> refs{0};
-            std::atomic<int> pendingWorkers{0};
             IRunnable* runnable;
+            std::atomic<int> refs;
+            std::atomic<int> pendingWorkers;
             std::vector<TaskID> dependents;
             std::vector<int> lastWorkerTasks;
 
-            TaskInfo(IRunnable* run, int workerCount, int totalTasks) {
-                runnable = run;
-                totalTasks = totalTasks;
-                pendingWorkers = workerCount;
+            TaskInfo(IRunnable* run, int workerCount, int taskCount)
+                : totalTasks(taskCount), runnable(run), refs(0), pendingWorkers(0) {
+                
                 lastWorkerTasks.reserve(workerCount);
 
                 for (int i=0; i<workerCount;++i) {
                     lastWorkerTasks.emplace_back(-1);
                 }
             }
-        }
+        };
 
         std::vector<std::thread> threadPool;
         std::vector<std::unique_ptr<ThreadSafeQueue>> workerTaskQueues;
@@ -117,8 +117,9 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::vector<std::unique_ptr<TaskInfo>> tasks;
         int startingTaskWorker = 0;
 
-        void TaskSystemParallelThreadPoolSleeping::AssignTasksStatically(IRunnable* runnable, int num_total_tasks, int workerTaskStart);
-        void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq, int id);
+        void assignTasksStatically(IRunnable* runnable, int num_total_tasks, int workerTaskStart);
+
+        const std::vector<TaskID> DEFAULT_VECTOR;
 };
 
 #endif
