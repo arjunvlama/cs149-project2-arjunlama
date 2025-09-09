@@ -86,17 +86,21 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
 
         struct TaskInfo {
             //bool running = false;
+            int totalTasks;
             std::atomic<int> refs{0};
+            std::atomic<int> pendingWorkers{0};
             IRunnable* runnable;
             std::vector<TaskID> dependents;
-            std::vector<std::pair<int, std::atomic<bool>>> workersFinished;
+            std::vector<int> lastWorkerTasks;
 
-            TaskInfo(IRunnable* run, int workerCount) {
+            TaskInfo(IRunnable* run, int workerCount, int totalTasks) {
                 runnable = run;
-                workersFinished.reserve(workerCount);
+                totalTasks = totalTasks;
+                pendingWorkers = workerCount;
+                lastWorkerTasks.reserve(workerCount);
 
                 for (int i=0; i<workerCount;++i) {
-                    workersFinished.emplace_back(-1, false);
+                    lastWorkerTasks.emplace_back(-1);
                 }
             }
         }
@@ -107,10 +111,14 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         int workerCount = 0;
 
         std::condition_variable tasksFinished;
+        std::atomic<int> tasksLeft{0};
         std::atomic<bool> kill{false};
 
-        std::vector<TaskInfo> waitingTasks;
-        int workerTaskStart = 0;
+        std::vector<std::unique_ptr<TaskInfo>> tasks;
+        int startingTaskWorker = 0;
+
+        void TaskSystemParallelThreadPoolSleeping::AssignTasksStatically(IRunnable* runnable, int num_total_tasks, int workerTaskStart);
+        void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq, int id);
 };
 
 #endif
