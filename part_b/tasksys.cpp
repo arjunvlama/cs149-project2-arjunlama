@@ -169,12 +169,12 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
         depTaskInfo->depsMtx.lock();
 
         if (!depTaskInfo->depsChecked) {
-            dependTaskInfo->dependents.push_back(tasks.size()-1);
+            depTaskInfo->dependents.push_back(tasks.size()-1);
             checked = false;
         }
         depTaskInfo->depsMtx.unlock();
 
-        // if a task was even close to having its refs checked, perform the decrement on its behalf
+        // if the task was even close to having its refs checked, perform the decrement on its behalf
         if (checked && tasks.back()->refs.fetch_sub(1) == 1) {
             scheduleTask = true;
         }
