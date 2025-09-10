@@ -86,16 +86,17 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         };
 
         struct TaskInfo {
-            //bool running = false;
+            bool depsChecked;
             int totalTasks;
             IRunnable* runnable;
             std::atomic<int> refs;
             std::atomic<int> pendingWorkers;
+            std::mutex depsMtx;
             std::vector<TaskID> dependents;
             std::vector<int> lastWorkerTasks;
 
             TaskInfo(IRunnable* run, int workerCount, int taskCount, int depsCount)
-                : totalTasks(taskCount), runnable(run), refs(depsCount), pendingWorkers(0) {
+                : depsChecked(false), totalTasks(taskCount), runnable(run), refs(depsCount), pendingWorkers(0) {
                 
                 lastWorkerTasks.reserve(workerCount);
 

@@ -159,21 +159,29 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     //std::cout << "Starting async run task with total task count " << num_total_tasks << '\n';
 
     ++tasksLeft;
-
+    // put the task info 
+    tasks.emplace_back(std::unique_ptr<TaskInfo>(new TaskInfo(runnable, workerCount, num_total_tasks, deps.size())));
     bool scheduleTask = true;
 
     for (size_t i=0; i<deps.size(); i++) {
-        if (tasks[i]->pendingWorkers != 0) {
-            scheduleTask = false;
-            break;
+        bool checked = true;
+        TaskInfo* depTaskInfo = tasks[deps[i]].get();
+        depTaskInfo->depsMtx.lock();
+
+        if (!depTaskInfo->depsChecked) {
+            dependTaskInfo->dependents.push_back(tasks.size()-1);
+            checked = false;
+        }
+        depTaskInfo->depsMtx.unlock();
+
+        // if a task was even close to having its refs checked, perform the decrement on its behalf
+        if (checked && tasks.back()->refs.fetch_sub(1) == 1) {
+            scheduleTask = true;
         }
     }
 
-    // put the task info 
-    tasks.emplace_back(std::unique_ptr<TaskInfo>(new TaskInfo(runnable, workerCount, num_total_tasks, deps.size())));
-
     if (scheduleTask) {
-        assignTasksStatically(runnable, tasks.size()-1, startingTaskWorker);
+        assignTasksStatically(runnable, tasks.size()-1, startingTaskWorker); // reconsider this startingTaskWorkerThing, its unnecessary contention
     }
 
     //std::cout << "Finished async run task with task list size " << tasks.size() << '\n';
@@ -271,6 +279,10 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
             if (myTask.second == myTaskInfo->lastWorkerTasks[id]) {
                 if (myTaskInfo->pendingWorkers.fetch_sub(1) == 1) {
                     //std::cout << "Finished task " << myTask.first << " item " << myTask.second << " " << id << '\n';
+                    myTaskInfo->depsMtx.lock();
+                    myTaskInfo->depsChecked = true;
+                    myTaskInfo->depsMtx.unlock();
+
                     for (size_t i=0;i<myTaskInfo->dependents.size(); i++) {
                         TaskInfo* dependTaskInfo = tasks[myTaskInfo->dependents[i]].get();
                         if (dependTaskInfo->refs.fetch_sub(1) == 1) {
