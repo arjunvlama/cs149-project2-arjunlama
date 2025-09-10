@@ -170,7 +170,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     }
 
     // put the task info 
-    tasks.emplace_back(std::unique_ptr<TaskInfo>(new TaskInfo(runnable, workerCount, num_total_tasks)));
+    tasks.emplace_back(std::unique_ptr<TaskInfo>(new TaskInfo(runnable, workerCount, num_total_tasks, deps.size())));
 
     if (scheduleTask) {
         assignTasksStatically(runnable, tasks.size()-1, startingTaskWorker);

@@ -94,8 +94,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
             std::vector<TaskID> dependents;
             std::vector<int> lastWorkerTasks;
 
-            TaskInfo(IRunnable* run, int workerCount, int taskCount)
-                : totalTasks(taskCount), runnable(run), refs(0), pendingWorkers(0) {
+            TaskInfo(IRunnable* run, int workerCount, int taskCount, int depsCount)
+                : totalTasks(taskCount), runnable(run), refs(depsCount), pendingWorkers(0) {
                 
                 lastWorkerTasks.reserve(workerCount);
 
