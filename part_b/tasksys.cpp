@@ -156,12 +156,12 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                                                     const std::vector<TaskID>& deps) {
     // check if the task can be run immediately
 
-    //std::cout << "Starting async run task with total task count " << num_total_tasks << '\n';
+    //std::cout << "Starting async run task with total task count " << num_total_tasks << " and deps count " << deps.size() << '\n';
 
     ++tasksLeft;
     // put the task info 
     tasks.emplace_back(std::unique_ptr<TaskInfo>(new TaskInfo(runnable, workerCount, num_total_tasks, deps.size())));
-    bool scheduleTask = true;
+    bool scheduleTask = false;
 
     for (size_t i=0; i<deps.size(); i++) {
         bool checked = true;
@@ -174,14 +174,16 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
         }
         depTaskInfo->depsMtx.unlock();
 
-        // if the task was even close to having its refs checked, perform the decrement on its behalf
+        // if a task was even close to having its deps checked, perform the decrement on its behalf
         if (checked && tasks.back()->refs.fetch_sub(1) == 1) {
+            //std::cout << "Schedule task == true!! " << '\n';
             scheduleTask = true;
+            break;
         }
     }
 
-    if (scheduleTask) {
-        assignTasksStatically(runnable, tasks.size()-1, startingTaskWorker); // reconsider this startingTaskWorkerThing, its unnecessary contention
+    if (scheduleTask || deps.empty()) {
+        assignTasksStatically(runnable, tasks.size()-1, startingTaskWorker);
     }
 
     //std::cout << "Finished async run task with task list size " << tasks.size() << '\n';
