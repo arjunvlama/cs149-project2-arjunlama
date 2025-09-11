@@ -156,7 +156,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                                                     const std::vector<TaskID>& deps) {
     // check if the task can be run immediately
 
-    //std::cout << "Starting async run task with total task count " << num_total_tasks << " and deps count " << deps.size() << '\n';
+    ////std::cout << "Starting async run task with total task count " << num_total_tasks << " and deps count " << deps.size() << '\n';
 
     ++tasksLeft;
     // put the task info 
@@ -176,7 +176,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 
         // if a task was even close to having its deps checked, perform the decrement on its behalf
         if (checked && tasks.back()->refs.fetch_sub(1) == 1) {
-            //std::cout << "Schedule task == true!! " << '\n';
+            ////std::cout << "Schedule task == true!! " << '\n';
             scheduleTask = true;
             break;
         }
@@ -186,17 +186,17 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
         assignTasksStatically(runnable, tasks.size()-1, startingTaskWorker);
     }
 
-    //std::cout << "Finished async run task with task list size " << tasks.size() << '\n';
+    ////std::cout << "Finished async run task with task list size " << tasks.size() << '\n';
 
     return tasks.size()-1;
 }
 
 void TaskSystemParallelThreadPoolSleeping::assignTasksStatically(IRunnable* runnable, int parentTaskNum, int workerTaskStart) {
     
-    //std::cout << "Assigning task " << parentTaskNum << " from worker start " << workerTaskStart << '\n';
+    ////std::cout << "Assigning task " << parentTaskNum << " from worker start " << workerTaskStart << '\n';
 
     int numTotalTasks = tasks[parentTaskNum]->totalTasks;
-    //std::cout << "Number of sub tasks for parent " << parentTaskNum << " is " << numTotalTasks << '\n';  
+    //////std::cout << "Number of sub tasks for parent " << parentTaskNum << " is " << numTotalTasks << '\n';  
     int tasksPerWorker = numTotalTasks / workerCount;
     int extraTaskWorkers = numTotalTasks % workerCount;
     int taskNumber = numTotalTasks - 1;
@@ -219,11 +219,11 @@ void TaskSystemParallelThreadPoolSleeping::assignTasksStatically(IRunnable* runn
         if (numTasks == 0) continue;
 
         tasks[parentTaskNum]->lastWorkerTasks[workerTaskStart] = taskNumber - (numTasks - 1);
-        //std::cout << "Last worker task for task " << parentTaskNum << " set to " << taskNumber - (numTasks - 1) << " for worker " << workerTaskStart << '\n';
+        ////std::cout << "Last worker task for task " << parentTaskNum << " set to " << taskNumber - (numTasks - 1) << " for worker " << workerTaskStart << '\n';
         ThreadSafeQueue* wtq = workerTaskQueues[workerTaskStart].get();
         wtq->mtx.lock();
         for (int j=0; j<numTasks; ++j) {
-            //std::cout << "Putting task number " << parentTaskNum << " item number " << taskNumber << " on the queue!" << '\n';
+            ////std::cout << "Putting task number " << parentTaskNum << " item number " << taskNumber << " on the queue!" << '\n';
             wtq->tasks.emplace_back(parentTaskNum, taskNumber);
             --taskNumber;
         }
@@ -236,14 +236,14 @@ void TaskSystemParallelThreadPoolSleeping::assignTasksStatically(IRunnable* runn
 
 void TaskSystemParallelThreadPoolSleeping::sync() {
 
-    //std::cout << "Entering sync call!" << '\n';
+    ////std::cout << "Entering sync call!" << '\n';
 
     std::mutex mtx;
     std::unique_lock<std::mutex> lock(mtx);
 
     tasksFinished.wait(lock, [this] { return (tasksLeft <= 0); });
 
-    //std::cout << "Made it past sync wait!" << '\n';
+    ////std::cout << "Made it past sync wait!" << '\n';
 
     tasksLeft = 0;
     tasks.clear();
@@ -254,7 +254,7 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
 
 void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq, int id) {
 
-    //std::cout << "Running worker thread! " << id << '\n';
+    ////std::cout << "Running worker thread! " << id << '\n';
     //try {
     std::pair<int,int> defaultTask = {-1, -1};
     std::pair<int,int> myTask = {-1,-1};
@@ -262,20 +262,20 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
     int nextWorker = (id + 1) % workerCount;
 
     while (1) {
-        //std::cout << "Running worker thread top of loop " << id << '\n';
+        ////std::cout << "Running worker thread top of loop " << id << '\n';
         lock.lock();
         tsq->cv.wait(lock, [tsq, this] { return !tsq->tasks.empty() || kill; });
         if (kill) return;
-        //std::cout << "Running worker thread taking from the queue " << id << '\n';
+        ////std::cout << "Running worker thread taking from the queue " << id << '\n';
         myTask = tsq->tasks.front();
-        //std::cout << "Running worker thread popping " << myTask.first << " item " << myTask.second << " from the queue " << id << '\n';
+        ////std::cout << "Running worker thread popping " << myTask.first << " item " << myTask.second << " from the queue " << id << '\n';
         tsq->tasks.pop_front();
         lock.unlock();
         
-        //std::cout << "Running worker thread task number to run " << myTask.first << " item " << myTask.second << " " << id << '\n';
+        ////std::cout << "Running worker thread task number to run " << myTask.first << " item " << myTask.second << " " << id << '\n';
         if (myTask != defaultTask) {
             TaskInfo* myTaskInfo = tasks[myTask.first].get();
-            //std::cout << "Running worker thread running task " << myTask.first << " item " << myTask.second << " " << id << '\n';
+            ////std::cout << "Running worker thread running task " << myTask.first << " item " << myTask.second << " " << id << '\n';
             myTaskInfo->runnable->runTask(myTask.second, myTaskInfo->totalTasks); // run the task
 
             if (myTask.second == myTaskInfo->lastWorkerTasks[id]) {
@@ -295,7 +295,6 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
                     }
                     
                     // less contention than before here, but if there are a lot of small batches of tasks its still bad
-                    tasks[myTask.first].reset();
                     if (tasksLeft.fetch_sub(1) == 1) {
                         //std::cout << "Notifying sync of task completion for: " << myTask.first << " " << id << '\n';
                         tasksFinished.notify_one();
@@ -313,6 +312,6 @@ void TaskSystemParallelThreadPoolSleeping::runWorkerThread(ThreadSafeQueue* tsq,
     std::cerr << "Error category: " << id << " " << e.code().category().name() << "\n";
     std::cerr << "Error message: " << id << " " << e.code().message() << "\n";
     }
-    std::cout << "Worker thread exiting! " << id << '\n';*/
+    //std::cout << "Worker thread exiting! " << id << '\n';*/
     return;
 }
